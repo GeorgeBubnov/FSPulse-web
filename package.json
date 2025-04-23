@@ -10,7 +10,7 @@
       "build": "bunx prisma generate && bun run --bun next build",
       "start": "bun run --bun next start",
       "prepare": "bun run --bun husky",
-      "postinstall": "bunx prisma generate",
+      "postinstall": "bun run prisma generate",
       "db:gen": "bun run prisma generate",
       "db:push": "bun run prisma db push",
       "db:seed": "bun prisma/seed.ts",
