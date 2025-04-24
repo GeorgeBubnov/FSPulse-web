@@ -1,4 +1,3 @@
-// src/app/representative/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -6,8 +5,8 @@ import React, { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import AchievementCards from "@/app/representative/_components/achievement/achievement-cards";
-import { MainCards } from "@/app/representative/_components/main-cards";
 import { Statistics } from "@/app/representative/_components/statistics/statistics";
+import { MainCards } from "@/app/representative/_components/main-cards";
 import TeamCards from "@/app/representative/_components/team/team-cards";
 import CompetitionCards from "@/components/competition/competition-cards";
 import CompetitionCreateForm from "@/components/competition/competition-create-form";
@@ -24,8 +23,6 @@ import { Button, CircularProgress, useDisclosure } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import { RequestStatus } from "../generated/prisma";
-
-// src/app/representative/page.tsx
 
 interface Paged<T> {
     items: T[];
@@ -62,25 +59,25 @@ export default function RequestsPage() {
     // sync tab from URL
     useEffect(() => {
         const tab = searchParams.get("tab") as Tab | null;
-        if (tab && ["requests", "events", "team", "achievement"].includes(tab)) {
+        if (tab && ["requests", "events", "team"].includes(tab)) {
             setActiveTab(tab);
         } else {
             router.replace("/representative?tab=requests");
             setActiveTab("requests");
         }
     }, [pathname, router, searchParams]);
-
     useEffect(() => {
         if (!isLoading && !isAuthenticated) {
             router.push("/");
         }
     }, [isAuthenticated, isLoading, router]);
 
-    // load requests
+    // load competitions when on "requests"
     useEffect(() => {
         if (activeTab !== "requests" || !user?.id) return;
-        setIsRequestsLoading(true);
-        (async () => {
+        console.log(user.id);
+        const loadRequests = async () => {
+            setIsRequestsLoading(true);
             try {
                 const params = {
                     ...searchParamsState,
@@ -88,7 +85,9 @@ export default function RequestsPage() {
                     page,
                     pageSize: perPage,
                 };
+                console.log("Параметры поиска: ", params);
                 const result = await searchRepresentativeRequests(params);
+                console.log("Результат: ", result);
                 setRequestsData({
                     items: result.results,
                     pagination: {
@@ -98,50 +97,93 @@ export default function RequestsPage() {
                         totalPages: result.totalPages,
                     },
                 });
+            } catch (error) {
+                console.error("Error loading requests:", error);
             } finally {
                 setIsRequestsLoading(false);
             }
-        })();
+        };
+
+        void loadRequests();
     }, [activeTab, page, searchParamsState, user?.id]);
 
-    // load events
-    useEffect(() => {
-        if (activeTab !== "events") return;
-        setIsEventLoading(true);
-        fetch(`/api/events?page=${page}&pageSize=${perPage}`)
-            .then((r) => r.json())
-            .then((json: Paged<EventItem>) => { setEventsData(json); })
-            .finally(() => { setIsEventLoading(false); });
-    }, [activeTab, page]);
-
-    // load teams
-    useEffect(() => {
-        if (activeTab !== "team") return;
-        setIsTeamLoading(true);
-        fetch(`/api/teams?page=${page}&pageSize=${perPage}`)
-            .then((r) => r.json())
-            .then((json: Paged<TeamItem>) => { setTeamData(json); })
-            .finally(() => { setIsTeamLoading(false); });
-    }, [activeTab, page]);
-
-    // load achievements
-    useEffect(() => {
-        if (activeTab !== "achievement") return;
-        setIsAchievementLoading(true);
-        fetch(`/api/achievements?page=${page}&pageSize=${perPage}`)
-            .then((r) => r.json())
-            .then((json: Paged<AchievementItem>) => { setAchievementData(json); })
-            .finally(() => { setIsAchievementLoading(false); });
-    }, [activeTab, page]);
-
+    // Обработчик поиска
     const handleSearch = (params: SearchParams) => {
         setSearchParamsState(params);
         setPage(1);
     };
 
+    // load events when on "events"
+    useEffect(() => {
+        if (activeTab !== "events") return;
+
+        const loadEvents = async () => {
+            setIsEventLoading(true);
+            try {
+                const result = await searchRepresentativeEvents({
+                    ...searchParamsState,
+                    representativeId: user?.id,
+                    page,
+                    pageSize: perPage,
+                });
+                setEventsData({
+                    items: result.results,
+                    pagination: {
+                        page,
+                        pageSize: perPage,
+                        totalItems: result.totalItems,
+                        totalPages: result.totalPages,
+                    },
+                });
+            } catch (error) {
+                console.error("Error loading events:", error);
+            } finally {
+                setIsEventLoading(false);
+            }
+        };
+
+        void loadEvents();
+    }, [activeTab, page, searchParamsState, user?.id]);
+
+    useEffect(() => {
+        if (activeTab !== "team") return;
+        setIsTeamLoading(true);
+        void fetch(`/api/events?page=${page}&pageSize=${perPage}`)
+            .then((r) => r.json())
+            .then((json: Paged<TeamItem>) => {
+                setTeamData(json);
+            })
+            .finally(() => {
+                setIsTeamLoading(false);
+            });
+    }, [activeTab, page]);
+
+    useEffect(() => {
+        if (activeTab !== "achievement") return;
+        setIsAchievementLoading(true);
+        void fetch(`/api/achievements?page=${page}&pageSize=${perPage}`)
+            .then((r) => r.json())
+            .then((json: Paged<AchievementItem>) => { setAchievementData(json); })
+            .finally(() => { setIsAchievementLoading(false); });
+    }, [activeTab, page]);
+
+
+    const compPageItems = requestsData?.items ?? [];
+    const totalCompPages = requestsData?.pagination.page ?? 1;
+
+    const evtPageItems = eventsData?.items ?? [];
+    const totalEvtPages = eventsData?.pagination.page ?? 1;
+
+    const teamPageItems = teamData?.items ?? [];
+    const totalTeamPages = teamData?.pagination.totalPages ?? 1;
+
+    const achievementPageItems = achievementData?.items ?? [];
+    const totalAchievementPages = achievementData?.pagination.totalPages ?? 1;
+
     if (isLoading) {
         return <CircularProgress aria-label="Loading..." size="lg" />;
     }
+
     if (!isAuthenticated) {
         return null;
     }
@@ -151,67 +193,65 @@ export default function RequestsPage() {
             <NavbarElement activeTab={activeTab} setActiveTabAction={setActiveTab} />
 
             <div className="flex min-h-[100vh] w-full">
+                {/* Sidebar */}
                 <SearchCardOrDrawer onSearchAction={handleSearch} tabType={activeTab} />
 
-                <div className="flex-1 space-y-8 p-6">
-                    {activeTab === "requests" && (
-                        <>
-                            <MainCards<RepresentativeRequestItem>
-                                isLoading={isRequestsLoading}
-                                pageItems={requestsData?.items ?? []}
-                                totalPages={requestsData?.pagination.totalPages ?? 1}
-                                page={page}
-                                setPageAction={setPage}
-                                renderCardsAction={(items) => <CompetitionCards paginatedData={items} />}
-                            />
+                {/* Main */}
+                {activeTab === "requests" && (
+                    <>
+                        <MainCards<RepresentativeRequestItem>
+                            isLoading={isRequestsLoading}
+                            pageItems={compPageItems}
+                            totalPages={totalCompPages}
+                            page={page}
+                            setPageAction={setPage}
+                            renderCardsAction={(items) => <CompetitionCards paginatedData={items} />}
+                        />
+                        <div className="absolute">
                             <Button
-                                isIconOnly
-                                onPress={onOpen}
                                 className="fixed right-5 bottom-5 z-10"
+                                isIconOnly
                                 aria-label="Create"
+                                onPress={onOpen}
                                 size="lg"
                             >
                                 <Icon icon="iconoir:plus" width={50} height={50} />
                             </Button>
-                            <ModalOrDrawer
-                                label="Создание соревнования"
-                                isOpen={isOpen}
-                                onOpenChangeAction={onOpenChange}
-                            >
-                                <CompetitionCreateForm />
-                            </ModalOrDrawer>
-                        </>
-                    )}
+                        </div>
+                        <ModalOrDrawer label="Создание соревнования" isOpen={isOpen} onOpenChangeAction={onOpenChange}>
+                            <CompetitionCreateForm />
+                        </ModalOrDrawer>
+                    </>
+                )}
 
-                    {activeTab === "events" && (
-                        <MainCards<EventItem>
-                            isLoading={isEventLoading}
-                            pageItems={eventsData?.items ?? []}
-                            totalPages={eventsData?.pagination.totalPages ?? 1}
-                            page={page}
-                            setPageAction={setPage}
-                            renderCardsAction={(items) => <EventCards paginatedData={items} />}
-                        />
-                    )}
+                {activeTab === "events" && (
+                    <MainCards<EventItem>
+                        isLoading={isEventLoading}
+                        pageItems={evtPageItems}
+                        totalPages={totalEvtPages}
+                        page={page}
+                        setPageAction={setPage}
+                        renderCardsAction={(items) => <EventCards paginatedData={items} />}
+                    />
+                )}
 
-                    {activeTab === "team" && (
-                        <MainCards<TeamItem>
-                            isLoading={isTeamLoading}
-                            pageItems={teamData?.items ?? []}
-                            totalPages={teamData?.pagination.totalPages ?? 1}
-                            page={page}
-                            setPageAction={setPage}
-                            renderCardsAction={(items) => <TeamCards paginatedData={items} />}
-                        />
-                    )}
+                {activeTab === "team" && (
+                    <MainCards<TeamItem>
+                        isLoading={isTeamLoading}
+                        pageItems={teamPageItems}
+                        totalPages={totalTeamPages}
+                        page={page}
+                        setPageAction={setPage}
+                        renderCardsAction={(items) => <TeamCards paginatedData={items} />}
+                    />
+                )}
 
-                    {activeTab === "achievement" && (
+                {activeTab === "achievement" && (
                         <>
                             <AchievementCards paginatedData={achievementData?.items ?? []} />
                             <Statistics />
                         </>
                     )}
-                </div>
             </div>
 
             <FooterElement />
