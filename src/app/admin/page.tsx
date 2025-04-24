@@ -1,3 +1,4 @@
+// src/app/admin/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -5,23 +6,27 @@ import React, { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import AchievementCards from "@/app/admin/_components/achievement/achievement-cards";
-import EventCards from "@/app/admin/_components/event/event-cards";
 import { MainCards } from "@/app/admin/_components/main-cards";
-import { SearchCardOrDrawer } from "@/app/admin/_components/search/search-card-or-drawer";
+// импорт компонента статистики
+import { Statistics } from "@/app/admin/_components/statistics/statistics";
 import TeamCards from "@/app/representative/_components/team/team-cards";
+import CompetitionCards from "@/components/competition/competition-cards";
+import EventCards from "@/components/event/event-cards";
 import FooterElement from "@/components/footer";
 import NavbarElement from "@/components/navbar";
-import { searchRepresentativeRequests } from "@/data/event";
+import { SearchCardOrDrawer } from "@/components/search/search-card-or-drawer";
+import { searchRepresentativeEvents, searchRepresentativeRequests } from "@/data/event";
 import { RepresentativeItem, getRepresentatives } from "@/data/representative";
 import { useAuth } from "@/hooks/use-auth";
 import { AchievementItem, EventItem, Tab, TeamItem } from "@/types";
 import { RepresentativeRequestItem, SearchParams } from "@/types/search";
 import { Button, CircularProgress, useDisclosure } from "@heroui/react";
-import { Icon } from "@iconify/react/dist/iconify.js";
+import { Icon } from "@iconify/react";
 
 import { RequestStatus } from "../generated/prisma";
-import CompetitionCards from "./_components/competition/competition-cards";
 import { RepresentativeTableWithPagination } from "./_components/representative-table";
+
+// src/app/admin/page.tsx
 
 interface Paged<T> {
     items: T[];
@@ -36,165 +41,150 @@ interface Paged<T> {
 export default function AdministratorPage() {
     const { isAuthenticated, isLoading, user } = useAuth();
     const [searchParamsState, setSearchParamsState] = useState<SearchParams>({
-        requestStatus: RequestStatus.PENDING,
+        requestStatus: RequestStatus.APPROVED,
     });
-    const [requestsData, setRequestsData] = useState<Paged<RepresentativeRequestItem> | null>(null);
     const [representativesData, setRepresentativesData] = useState<Paged<RepresentativeItem> | null>(null);
-    const [isRequestsLoading, setIsRequestsLoading] = useState(false);
-    const [page, setPage] = useState(1);
-    const [activeTab, setActiveTab] = useState<Tab>("representative");
+    const [requestsData, setRequestsData] = useState<Paged<RepresentativeRequestItem> | null>(null);
     const [eventsData, setEventsData] = useState<Paged<EventItem> | null>(null);
-    const [isEventLoading, setIsEventLoading] = useState(false);
     const [teamData, setTeamData] = useState<Paged<TeamItem> | null>(null);
-    const [isTeamLoading, setIsTeamLoading] = useState(false);
     const [achievementData, setAchievementData] = useState<Paged<AchievementItem> | null>(null);
-    const [isAchievementLoading, setIsAchievementLoading] = useState(false);
-    const { onOpen } = useDisclosure();
+
+    const [isLoadingTab, setIsLoadingTab] = useState(false);
+    const [page, setPage] = useState(1);
+
+    // вкладки: representative, events, team, requests, achievement, statistics
+    const [activeTab, setActiveTab] = useState<Tab | "statistics">("representative");
+
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const perPage = 12;
+    const { onOpen } = useDisclosure();
 
-    // sync tab from URL
+    // синхронизируем таб с URL
     useEffect(() => {
-        const tab = searchParams.get("tab") as Tab | null;
-        if (tab && ["representative", "events", "team", "requests"].includes(tab)) {
+        const tab = searchParams.get("tab") as Tab | "statistics" | null;
+        if (tab && ["representative", "events", "team", "requests", "achievement", "statistics"].includes(tab)) {
             setActiveTab(tab);
         } else {
             router.replace("/admin?tab=representative");
             setActiveTab("representative");
         }
     }, [pathname, router, searchParams]);
+
+    // редирект, если не аутентифицировано
     useEffect(() => {
         if (!isLoading && !isAuthenticated) {
             router.push("/");
         }
-    }, [isAuthenticated, isLoading, router]);
+    }, [isLoading, isAuthenticated, router]);
 
-    // load competitions when on "requests"
+    // загрузка представительств
     useEffect(() => {
-        if (activeTab !== "representative" || !user?.id) return;
-
-        const loadRepresentatives = async () => {
-            setIsRequestsLoading(true);
+        if (activeTab !== "representative") return;
+        setIsLoadingTab(true);
+        (async () => {
             try {
-                const result = await getRepresentatives({
+                const res = await getRepresentatives({
                     ...searchParamsState,
                     page,
                     pageSize: perPage,
                 });
-
                 setRepresentativesData({
-                    items: result.results,
+                    items: res.results,
                     pagination: {
                         page,
                         pageSize: perPage,
-                        totalItems: result.totalItems,
-                        totalPages: result.totalPages,
+                        totalItems: res.totalItems,
+                        totalPages: res.totalPages,
                     },
                 });
-            } catch (error) {
-                console.error("Error loading representatives:", error);
             } finally {
-                setIsRequestsLoading(false);
+                setIsLoadingTab(false);
             }
-        };
+        })();
+    }, [activeTab, page, searchParamsState]);
 
-        void loadRepresentatives();
+    // загрузка заявок
+    useEffect(() => {
+        if (activeTab !== "requests" || !user?.id) return;
+        setIsLoadingTab(true);
+        (async () => {
+            try {
+                const res = await searchRepresentativeRequests({
+                    ...searchParamsState,
+                    page,
+                    pageSize: perPage,
+                });
+                setRequestsData({
+                    items: res.results,
+                    pagination: {
+                        page,
+                        pageSize: perPage,
+                        totalItems: res.totalItems,
+                        totalPages: res.totalPages,
+                    },
+                });
+            } finally {
+                setIsLoadingTab(false);
+            }
+        })();
     }, [activeTab, page, searchParamsState, user?.id]);
 
-    // Обработчик поиска
+    // загрузка событий
+    useEffect(() => {
+        if (activeTab !== "events") return;
+        setIsLoadingTab(true);
+        (async () => {
+            try {
+                const res = await searchRepresentativeEvents({
+                    ...searchParamsState,
+                    page,
+                    pageSize: perPage,
+                });
+                setEventsData({
+                    items: res.results,
+                    pagination: {
+                        page,
+                        pageSize: perPage,
+                        totalItems: res.totalItems,
+                        totalPages: res.totalPages,
+                    },
+                });
+            } finally {
+                setIsLoadingTab(false);
+            }
+        })();
+    }, [activeTab, page, searchParamsState]);
+
+    // загрузка команд
+    useEffect(() => {
+        if (activeTab !== "team") return;
+        setIsLoadingTab(true);
+        fetch(`/api/teams?page=${page}&pageSize=${perPage}`)
+            .then((r) => r.json())
+            .then((json: Paged<TeamItem>) => { setTeamData(json); })
+            .finally(() => { setIsLoadingTab(false); });
+    }, [activeTab, page]);
+
+    // загрузка достижений
+    useEffect(() => {
+        if (activeTab !== "achievement") return;
+        setIsLoadingTab(true);
+        fetch(`/api/achievements?page=${page}&pageSize=${perPage}`)
+            .then((r) => r.json())
+            .then((json: Paged<AchievementItem>) => { setAchievementData(json); })
+            .finally(() => { setIsLoadingTab(false); });
+    }, [activeTab, page]);
+
     const handleSearch = (params: SearchParams) => {
         setSearchParamsState(params);
         setPage(1);
     };
-    // load events when on "events"
-    useEffect(() => {
-        if (activeTab !== "events") return;
-        setIsEventLoading(true);
-        void fetch(`/api/events?page=${page}&pageSize=${perPage}`)
-            .then((r) => r.json())
-            .then((json: Paged<EventItem>) => {
-                setEventsData(json);
-            })
-            .finally(() => {
-                setIsEventLoading(false);
-            });
-    }, [activeTab, page]);
-
-    useEffect(() => {
-        if (activeTab !== "team") return;
-        setIsTeamLoading(true);
-        void fetch(`/api/events?page=${page}&pageSize=${perPage}`)
-            .then((r) => r.json())
-            .then((json: Paged<TeamItem>) => {
-                setTeamData(json);
-            })
-            .finally(() => {
-                setIsTeamLoading(false);
-            });
-    }, [activeTab, page]);
-
-    useEffect(() => {
-        if (activeTab !== "achievement") return;
-        setIsTeamLoading(true);
-        void fetch(`/api/events?page=${page}&pageSize=${perPage}`)
-            .then((r) => r.json())
-            .then((json: Paged<AchievementItem>) => {
-                setAchievementData(json);
-            })
-            .finally(() => {
-                setIsAchievementLoading(false);
-            });
-    }, [activeTab, page]);
-    useEffect(() => {
-            if (activeTab !== "requests" || !user?.id) return;
-            const loadRequests = async () => {
-                setIsRequestsLoading(true);
-                try {
-                    const params = {
-                        ...searchParamsState,
-                        page,
-                        pageSize: perPage,
-                    };
-                    console.log("Параметры поиска: ", params);
-                    const result = await searchRepresentativeRequests(params);
-                    console.log("Результат: ", result);
-                    setRequestsData({
-                        items: result.results,
-                        pagination: {
-                            page,
-                            pageSize: perPage,
-                            totalItems: result.totalItems,
-                            totalPages: result.totalPages,
-                        },
-                    });
-                } catch (error) {
-                    console.error("Error loading requests:", error);
-                } finally {
-                    setIsRequestsLoading(false);
-                }
-            };
-    
-            void loadRequests();
-        }, [activeTab, page, searchParamsState, user?.id]);
-
-    const compPageItems = requestsData?.items ?? [];
-    const totalCompPages = requestsData?.pagination.totalPages ?? 1;
-
-    const evtPageItems = eventsData?.items ?? [];
-    const totalEvtPages = eventsData?.pagination.totalPages ?? 1;
-
-    const teamPageItems = teamData?.items ?? [];
-    const totalTeamPages = teamData?.pagination.totalPages ?? 1;
-
-    const achievementPageItems = achievementData?.items ?? [];
-    const totalAchievementPages = achievementData?.pagination.totalPages ?? 1;
 
     if (isLoading) {
         return <CircularProgress aria-label="Loading..." size="lg" />;
     }
-
     if (!isAuthenticated) {
         return null;
     }
@@ -204,77 +194,66 @@ export default function AdministratorPage() {
             <NavbarElement activeTab={activeTab} setActiveTabAction={setActiveTab} />
 
             <div className="flex min-h-[100vh] w-full">
-                {/* Sidebar */}
                 <SearchCardOrDrawer onSearchAction={handleSearch} tabType={activeTab} />
 
-                {/* Main */}
-                {activeTab === "representative" && (
-                    <div className="flex-1 p-4">
-                        {isRequestsLoading ? (
-                            <CircularProgress aria-label="Загрузка..." />
-                        ) : representativesData ? (
-                            <RepresentativeTableWithPagination
-                                data={{
-                                    items: representativesData.items,
-                                    totalPages: representativesData.pagination.totalPages,
-                                    currentPage: page,
-                                }}
-                                onPageChangeAction={setPage}
-                            />
-                        ) : (
-                            <div className="text-center text-gray-500">Нет данных</div>
-                        )}
-                    </div>
-                )}
-                {activeTab === "requests" && (
-                    <>
+                <div className="flex-1 space-y-8 p-6">
+                    {activeTab === "representative" && (
+                        <RepresentativeTableWithPagination
+                            data={{
+                                items: representativesData?.items ?? [],
+                                totalPages: representativesData?.pagination.totalPages ?? 1,
+                                currentPage: page,
+                            }}
+                            onPageChangeAction={setPage}
+                        />
+                    )}
+
+                    {activeTab === "requests" && (
                         <MainCards<RepresentativeRequestItem>
-                            isLoading={isRequestsLoading}
-                            pageItems={compPageItems}
-                            totalPages={totalCompPages}
+                            isLoading={isLoadingTab}
+                            pageItems={requestsData?.items ?? []}
+                            totalPages={requestsData?.pagination.totalPages ?? 1}
                             page={page}
                             setPageAction={setPage}
                             renderCardsAction={(items) => <CompetitionCards paginatedData={items} />}
                         />
-                        <div className="absolute right-10 bottom-10">
-                            <Button isIconOnly aria-label="Create" onPress={onOpen}>
-                                <Icon icon="iconoir:plus" width={25} height={25} />
-                            </Button>
-                        </div>
-                    </>
-                )}
-                {activeTab === "events" && (
-                    <MainCards<EventItem>
-                        isLoading={isEventLoading}
-                        pageItems={evtPageItems}
-                        totalPages={totalEvtPages}
-                        page={page}
-                        setPageAction={setPage}
-                        renderCardsAction={(items) => <EventCards paginatedData={items} />}
-                    />
-                )}
+                    )}
 
-                {activeTab === "team" && (
-                    <MainCards<TeamItem>
-                        isLoading={isTeamLoading}
-                        pageItems={teamPageItems}
-                        totalPages={totalTeamPages}
-                        page={page}
-                        setPageAction={setPage}
-                        renderCardsAction={(items) => <TeamCards paginatedData={items} />}
-                    />
-                )}
+                    {activeTab === "events" && (
+                        <MainCards<EventItem>
+                            isLoading={isLoadingTab}
+                            pageItems={eventsData?.items ?? []}
+                            totalPages={eventsData?.pagination.totalPages ?? 1}
+                            page={page}
+                            setPageAction={setPage}
+                            renderCardsAction={(items) => <EventCards paginatedData={items} />}
+                        />
+                    )}
 
-                {activeTab === "achievement" && (
-                    <MainCards<AchievementItem>
-                        isLoading={isAchievementLoading}
-                        pageItems={achievementPageItems}
-                        totalPages={totalAchievementPages}
-                        page={page}
-                        setPageAction={setPage}
-                        renderCardsAction={(items) => <AchievementCards paginatedData={items} />}
-                    />
-                )}
+                    {activeTab === "team" && (
+                        <MainCards<TeamItem>
+                            isLoading={isLoadingTab}
+                            pageItems={teamData?.items ?? []}
+                            totalPages={teamData?.pagination.totalPages ?? 1}
+                            page={page}
+                            setPageAction={setPage}
+                            renderCardsAction={(items) => <TeamCards paginatedData={items} />}
+                        />
+                    )}
+
+                    {activeTab === "achievement" && (
+                        <MainCards<AchievementItem>
+                            isLoading={isLoadingTab}
+                            pageItems={achievementData?.items ?? []}
+                            totalPages={achievementData?.pagination.totalPages ?? 1}
+                            page={page}
+                            setPageAction={setPage}
+                            renderCardsAction={(items) => <AchievementCards paginatedData={items} />}
+                        />
+                    )}
+
+                    {activeTab === "statistics" && <Statistics />}
+                </div>
             </div>
 
             <FooterElement />

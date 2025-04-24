@@ -76,6 +76,7 @@ export async function searchRepresentativeEvents(params: SearchRepresentativeEve
         pageSize,
         representativeId,
         query,
+        requestStatus,
         disciplineId,
         minStartTime,
         maxStartTime,
@@ -87,10 +88,11 @@ export async function searchRepresentativeEvents(params: SearchRepresentativeEve
         isPersonalFormatAllowed,
     } = params;
     const requiredWhere = {
-        representative: {
-            some: { representativeId },
-        },
-        requestStatus: RequestStatus.APPROVED,
+        representatives: representativeId
+            ? {
+                  some: { representativeId },
+              }
+            : {},
     };
     const results = await prisma.event.findMany({
         where: {
@@ -116,6 +118,7 @@ export async function searchRepresentativeEvents(params: SearchRepresentativeEve
                       }
                     : {},
                 level ? { level } : {},
+                requestStatus ? { requestStatus } : {},
                 minAge || maxAge
                     ? {
                           minAge: {
@@ -136,7 +139,20 @@ export async function searchRepresentativeEvents(params: SearchRepresentativeEve
                 isPersonalFormatAllowed ? { isPersonalFormatAllowed } : {},
             ],
         },
-        select: { id: true, name: true, cover: true, requestStatus: true, level: true, applicationTime: true },
+        select: {
+            id: true,
+            name: true,
+            cover: true,
+            requestStatus: true,
+            level: true,
+            applicationTime: true,
+            startRegistration: true,
+            endRegistration: true,
+            start: true,
+            end: true,
+            discipline: true,
+            isOnline: true,
+        },
         skip: pageSize * (page - 1),
         take: pageSize,
         orderBy: { applicationTime: "desc" },
@@ -172,6 +188,28 @@ export async function getRepresentativeRequestById(id: string) {
     });
 }
 
+export async function getEventById(id: string) {
+    return prisma.event.findUnique({
+        where: { id },
+        include: {
+            representatives: {
+                include: {
+                    representative: {
+                        include: {
+                            user: {
+                                include: {
+                                    region: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            discipline: true,
+            files: true,
+        },
+    });
+}
 // —————————————————————————————————————————
 
 export interface EventSummary {
@@ -214,4 +252,48 @@ export async function getEventSummaries(page: number, pageSize: number): Promise
 
     const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
     return { items, pagination: { page, pageSize, totalItems, totalPages } };
+}
+export async function updateEventStatus(eventId: string, status: RequestStatus, comment?: string) {
+    try {
+        // Обновляем статус мероприятия
+        const updatedEvent = await prisma.event.update({
+            where: { id: eventId },
+            data: {
+                requestStatus: status,
+                requestComment: status === RequestStatus.DECLINED ? comment : null,
+            },
+            include: {
+                representatives: {
+                    include: {
+                        representative: {
+                            select: {
+                                user: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        // Создаем уведомления для всех представителей мероприятия
+        const notifications = updatedEvent.representatives.map((rep) => ({
+            userId: rep.representative.user.id,
+            type: "INFO" as const,
+            title: `Статус мероприятия "${updatedEvent.name}" изменен`,
+            content: `Статус изменен на "${
+                status === RequestStatus.APPROVED ? "Одобрено" : "Отклонено"
+            }"${comment ? ` с комментарием: ${comment}` : ""}`,
+        }));
+
+        if (notifications.length > 0) {
+            await prisma.notification.createMany({
+                data: notifications,
+            });
+        }
+
+        return updatedEvent;
+    } catch (error) {
+        console.error("Error updating event status:", error);
+        throw new Error("Не удалось обновить статус мероприятия");
+    }
 }

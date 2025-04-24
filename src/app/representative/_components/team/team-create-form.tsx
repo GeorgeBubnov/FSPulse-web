@@ -6,14 +6,17 @@ import type React from "react";
 import { useState } from "react";
 import { SubmitHandler, useForm } from "react-hook-form";
 
+import { registerTeam } from "@/data/team";
+import { useAuth } from "@/hooks/use-auth";
 import { teamRequestSchema } from "@/schemas/team-request-schema";
-import { Button, Input, cn } from "@heroui/react";
+import { Button, Input, Textarea } from "@heroui/react";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 const userSchema = teamRequestSchema;
 
 type UserFormData = z.infer<typeof userSchema>;
-export default function TeamCreateForm({ className }: React.ComponentProps<"form">) {
+export default function TeamCreateForm({ eventId }: { eventId: string }) {
+    const { user } = useAuth();
     const [isLoading, setIsLoading] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
 
@@ -31,8 +34,14 @@ export default function TeamCreateForm({ className }: React.ComponentProps<"form
             setIsLoading(true);
             setFormError(null);
 
-            console.log(data);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+            await registerTeam(
+                {
+                    name: data.name,
+                    about: data.description ?? null,
+                    eventId: eventId,
+                },
+                user?.id ?? "",
+            );
         } catch (error) {
             if (error instanceof Error) {
                 if (error.message.includes("name")) {
@@ -53,7 +62,7 @@ export default function TeamCreateForm({ className }: React.ComponentProps<"form
     };
 
     return (
-        <form className={cn("grid items-start gap-4", className)} onSubmit={handleFormSubmit}>
+        <form className="grid items-start gap-4" onSubmit={handleFormSubmit}>
             <div className="flex flex-col gap-4">
                 <Input
                     label="Название команды"
@@ -63,6 +72,16 @@ export default function TeamCreateForm({ className }: React.ComponentProps<"form
                     {...register("name")}
                     isInvalid={!!errors.name}
                     errorMessage={errors.name?.message}
+                />
+                <Textarea
+                    label="Описание команды"
+                    placeholder="Здесь также можете указать кого вы ищите"
+                    aria-label="Название команды"
+                    type="text"
+                    variant="bordered"
+                    {...register("description")}
+                    isInvalid={!!errors.description}
+                    errorMessage={errors.description?.message}
                 />
                 {formError && <div className="text-danger-500 text-center text-sm">{formError}</div>}
                 <Button type="submit" color="success" isLoading={isLoading} fullWidth className="mt-6">
